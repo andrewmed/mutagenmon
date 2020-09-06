@@ -1,0 +1,1 @@
+- resolve conflicts (remove conflicting files on beta) on menu click (will work only for one-way safe https://mutagen.io/documentation/synchronization)
