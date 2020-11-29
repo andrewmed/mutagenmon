@@ -43,10 +43,6 @@ Q: I run Mutagen Monitor, but nothing happens, there is no menu in system bar
 
 A: Check that Mutagen [daemon](https://mutagen.io/documentation/introduction/daemon) is running. To start daemon just do: `mutagen list`
 
-Demo
-----
-![](demo.mp4)
-
 Licence
 -------
 GPLv3
