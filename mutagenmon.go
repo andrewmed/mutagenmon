@@ -3,15 +3,6 @@ package mutagenmon
 import (
 	"context"
 	"fmt"
-	"github.com/getlantern/systray"
-	"github.com/mutagen-io/mutagen/cmd/mutagen/daemon"
-	"github.com/mutagen-io/mutagen/cmd/mutagen/sync"
-	daemon2 "github.com/mutagen-io/mutagen/pkg/daemon"
-	"github.com/mutagen-io/mutagen/pkg/project"
-	"github.com/mutagen-io/mutagen/pkg/selection"
-	serviceSync "github.com/mutagen-io/mutagen/pkg/service/synchronization"
-	"github.com/mutagen-io/mutagen/pkg/synchronization"
-	"google.golang.org/grpc"
 	"io/ioutil"
 	"log"
 	"os"
@@ -20,6 +11,17 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/getlantern/systray"
+	"github.com/mutagen-io/mutagen/cmd/mutagen/daemon"
+	"github.com/mutagen-io/mutagen/cmd/mutagen/sync"
+	daemon2 "github.com/mutagen-io/mutagen/pkg/daemon"
+	"github.com/mutagen-io/mutagen/pkg/project"
+	"github.com/mutagen-io/mutagen/pkg/selection"
+	serviceSync "github.com/mutagen-io/mutagen/pkg/service/synchronization"
+	"github.com/mutagen-io/mutagen/pkg/synchronization"
+	"github.com/mutagen-io/mutagen/pkg/synchronization/core"
+	"google.golang.org/grpc"
 )
 
 const IntervalSec = 2
@@ -157,7 +159,7 @@ func (self *MutagenMon) UpdateMenuItem(item *systray.MenuItem, state *synchroniz
 
 	var msg string
 
-	if hasConflicts(state) {
+	if hasConflicts(state) && state.Session.Configuration.SynchronizationMode == core.SynchronizationMode_SynchronizationModeOneWaySafe {
 		msg = "Conflicts: (click to overwrite)\n"
 		msg += "⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺\n"
 		var n int
