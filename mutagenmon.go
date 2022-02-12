@@ -20,7 +20,6 @@ import (
 	"github.com/mutagen-io/mutagen/pkg/selection"
 	serviceSync "github.com/mutagen-io/mutagen/pkg/service/synchronization"
 	"github.com/mutagen-io/mutagen/pkg/synchronization"
-	"github.com/mutagen-io/mutagen/pkg/synchronization/core"
 	"google.golang.org/grpc"
 )
 
@@ -33,8 +32,8 @@ var fatal = map[synchronization.Status]struct{}{
 }
 
 var disconnected = map[synchronization.Status]struct{}{
-	synchronization.Status_Disconnected:           {},
-	synchronization.Status_ConnectingBeta:         {},
+	synchronization.Status_Disconnected:   {},
+	synchronization.Status_ConnectingBeta: {},
 }
 
 var watching = map[synchronization.Status]struct{}{
@@ -55,12 +54,12 @@ var syncing = map[synchronization.Status]struct{}{
 type Peer struct {
 	menu     *systray.MenuItem
 	state    *synchronization.State
-	callback chan struct{}
+	callback chan struct{} // not used as for now
 }
 
 type MutagenMon struct {
 	peers     map[string]Peer
-	callbacks map[string]chan struct{}
+	callbacks map[string]chan struct{} // not used as for now
 	daemon    *grpc.ClientConn
 	interval  time.Duration
 	bad       int
@@ -87,7 +86,7 @@ func New() (*MutagenMon, error) {
 		}
 		return nil, fmt.Errorf("no daemon is running")
 	}
-	connection, err := daemon.CreateClientConnection(true, false)
+	connection, err := daemon.Connect(true, false)
 	if err != nil {
 		return nil, fmt.Errorf("connect to mutagen daemon: %v", err)
 	}
@@ -137,7 +136,7 @@ func (self *MutagenMon) Scheduler() {
 }
 
 func hasConflicts(state *synchronization.State) bool {
-	if state == nil{
+	if state == nil {
 		return false
 	}
 	return len(state.Conflicts) > 0
@@ -157,11 +156,11 @@ func (self *MutagenMon) UpdateMenuItem(item *systray.MenuItem, state *synchroniz
 	}
 	log.Printf("[DEBUG] update menu item")
 
-	var msg string
+	msg := fmt.Sprintf("Status: %s\n", state.Status.String())
 
-	if hasConflicts(state) && state.Session.Configuration.SynchronizationMode == core.SynchronizationMode_SynchronizationModeOneWaySafe {
-		msg = "Conflicts: (click to overwrite)\n"
-		msg += "⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺\n"
+	if hasConflicts(state) {
+		msg += "⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺\n"
+		msg += "Conflicts on Beta:\n"
 		var n int
 		for _, conflict := range state.GetConflicts() {
 			if n >= 20 {
@@ -183,10 +182,8 @@ func (self *MutagenMon) UpdateMenuItem(item *systray.MenuItem, state *synchroniz
 				msg += fmt.Sprintf("%s\n", path)
 			}
 		}
-	} else {
-		msg = fmt.Sprintf("%s\n", state.Status.String())
-		msg += fmt.Sprintf("Click to force flush\n")
 	}
+
 	item.SetTooltip(msg)
 	log.Printf("[INFO] state changed to: %s", msg)
 
@@ -214,7 +211,7 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 	var bad int
 	var conflict int
 	for id, current := range states {
-		if is(current, disconnected) || is(current, fatal){
+		if is(current, disconnected) || is(current, fatal) {
 			bad++
 		}
 		if hasConflicts(current) {
@@ -223,18 +220,10 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 		peer, ok := self.peers[id]
 		if !ok {
 			item := systray.AddMenuItem(fmt.Sprintf("%s:%s", current.Session.Beta.Host, current.Session.Beta.Path), "")
-			ch := make(chan struct{})
-			go func(id string) {
-				for range ch {
-					self.Resolve(id)
-				}
-			}(id)
-			item.ClickedCh = ch
 			self.UpdateMenuItem(item, current)
 			self.peers[id] = Peer{
-				menu:     item,
-				state:    current,
-				callback: ch,
+				menu:  item,
+				state: current,
 			}
 			continue
 		}
@@ -249,7 +238,6 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 		_, ok := states[id]
 		if !ok {
 			peer.menu.Hide()
-			close(peer.callback)
 			delete(self.peers, id)
 		}
 	}
@@ -268,8 +256,12 @@ func (self *MutagenMon) Flush(state *synchronization.State) {
 	if state == nil {
 		return
 	}
+
 	labelSelector := fmt.Sprintf("%s=%s", project.LabelKey, state.Session.GetIdentifier())
-	err := sync.FlushWithLabelSelector(labelSelector, true)
+	selection := selection.Selection{
+		LabelSelector: labelSelector,
+	}
+	err := sync.FlushWithSelection(self.daemon, &selection, true)
 	if err != nil {
 		log.Printf("[ERROR] Flush: %s", err)
 	}
@@ -350,7 +342,7 @@ func (self *MutagenMon) Run() {
 func (self *MutagenMon) Init() {
 	systray.SetIcon(Icon("icon.png"))
 	systray.SetTooltip("no conflict / connected / total")
-	mQuit := systray.AddMenuItem("Quit", "")
+	mQuit := systray.AddMenuItem("Quit Mutagen Monitor", "Author: https://www.andmed.org")
 	go func() {
 		<-mQuit.ClickedCh
 		systray.Quit()
