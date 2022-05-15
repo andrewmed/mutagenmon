@@ -1,5 +1,8 @@
 #/bin/sh
 set -e
+set -x
+
+# xcrun notarytool store-credentials "MutagenMon" --apple-id "your apple id email here" --team-id BPN9958X73 --password PasswordOrAppPassword
 
 security find-identity -v -p codesigning
 codesign --force --options=runtime --timestamp -s "Developer ID Application: Andrey Medvedev (BPN9958X73)" --verbose=2 MutagenMon.app
