@@ -6,24 +6,19 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/getlantern/systray"
 	"github.com/mutagen-io/mutagen/cmd/mutagen/daemon"
-	"github.com/mutagen-io/mutagen/cmd/mutagen/sync"
 	daemon2 "github.com/mutagen-io/mutagen/pkg/daemon"
-	"github.com/mutagen-io/mutagen/pkg/project"
 	"github.com/mutagen-io/mutagen/pkg/selection"
 	serviceSync "github.com/mutagen-io/mutagen/pkg/service/synchronization"
 	"github.com/mutagen-io/mutagen/pkg/synchronization"
 	"google.golang.org/grpc"
 )
 
-const IntervalSec = 2
+const InitInterval = 2 * time.Second
 
 var fatal = map[synchronization.Status]struct{}{
 	synchronization.Status_HaltedOnRootEmptied:    {},
@@ -93,7 +88,7 @@ func New() (*MutagenMon, error) {
 	mutagenMon := MutagenMon{
 		peers:    map[string]Peer{},
 		daemon:   connection,
-		interval: IntervalSec * time.Second,
+		interval: InitInterval,
 	}
 	return &mutagenMon, nil
 }
@@ -207,6 +202,7 @@ func SetIfNoConflict(state *synchronization.State, item *systray.MenuItem, name 
 	}
 	item.SetIcon(Icon(name))
 }
+
 func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*synchronization.State) error {
 	var bad int
 	var conflict int
@@ -248,82 +244,7 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 	self.bad = bad
 	self.conflict = conflict
 	self.total = total
-	log.Printf("[DEBUG] states checked, goroutines: %d", runtime.NumGoroutine())
 	return nil
-}
-
-func (self *MutagenMon) Flush(state *synchronization.State) {
-	if state == nil {
-		return
-	}
-
-	labelSelector := fmt.Sprintf("%s=%s", project.LabelKey, state.Session.GetIdentifier())
-	selection := selection.Selection{
-		LabelSelector: labelSelector,
-	}
-	err := sync.FlushWithSelection(self.daemon, &selection, true)
-	if err != nil {
-		log.Printf("[ERROR] Flush: %s", err)
-	}
-	return
-}
-
-func (self *MutagenMon) Resolve(id string) {
-	peer, ok := self.peers[id]
-	if !ok || peer.state.Session == nil {
-		return
-	}
-	log.Printf("[DEBUG] resolve")
-
-	err := peer.state.Session.EnsureValid()
-	if err != nil {
-		log.Printf("[ERROR] Resolve %s", err)
-		return
-	}
-
-	out, _ := ioutil.TempFile("", "mutagenmon-*")
-	defer out.Close()
-	paths := []string{}
-	for _, conflict := range peer.state.GetConflicts() {
-		if conflict == nil {
-			continue
-		}
-		for _, change := range conflict.BetaChanges {
-			if change == nil {
-				continue
-			}
-			paths = append(paths, change.GetPath())
-		}
-	}
-	if len(paths) == 0 {
-		self.Flush(peer.state)
-		return
-	}
-
-	for _, path := range paths {
-		_, err := out.WriteString(path + "\r\n")
-		if err != nil {
-			log.Printf("[ERROR] writing to tmp path: %s", err)
-			return
-		}
-	}
-
-	cmd := []string{
-		"rsync",
-		"-r",
-		fmt.Sprintf("--files-from=%s", out.Name()),
-		peer.state.Session.Alpha.Path,
-		fmt.Sprintf("%s:%s", peer.state.Session.Beta.GetHost(), peer.state.Session.Beta.GetPath()),
-	}
-	log.Printf("[DEBUG] rsync args: %s", strings.Join(cmd, ", "))
-	c := exec.Command(cmd[0], cmd[1:]...)
-	b, err := c.CombinedOutput()
-	if err != nil {
-		log.Printf("[ERROR] Rsync: %s", err)
-	} else {
-		log.Printf("[DEBUG] Rsync: %s", string(b))
-	}
-	self.Flush(peer.state)
 }
 
 func (self *MutagenMon) Run() {
