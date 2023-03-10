@@ -23,7 +23,7 @@ func main() {
 			break
 		}
 		log.Printf("[Info] waiting for initialization\n")
-		time.Sleep(mutagenmon.IntervalSec * time.Second)
+		time.Sleep(mutagenmon.InitInterval)
 	}
 	mm.Run()
 }
