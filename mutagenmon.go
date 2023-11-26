@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	"github.com/mutagen-io/mutagen/cmd/mutagen/daemon"
 	daemon2 "github.com/mutagen-io/mutagen/pkg/daemon"
 	"github.com/mutagen-io/mutagen/pkg/selection"
@@ -47,9 +47,10 @@ var syncing = map[synchronization.Status]struct{}{
 }
 
 type Peer struct {
-	menu     *systray.MenuItem
-	state    *synchronization.State
-	callback chan struct{} // not used as for now
+	menu  *systray.MenuItem
+	state *synchronization.State
+	//callback  chan struct{} // not used as for now
+	conflicts map[string]*systray.MenuItem
 }
 
 type MutagenMon struct {
@@ -60,6 +61,7 @@ type MutagenMon struct {
 	bad       int
 	conflict  int
 	total     int
+	sync      string
 }
 
 func is(state *synchronization.State, scope map[synchronization.Status]struct{}) bool {
@@ -145,42 +147,44 @@ func Icon(path string) []byte {
 	return b
 }
 
-func (self *MutagenMon) UpdateMenuItem(item *systray.MenuItem, state *synchronization.State) {
+func (self *Peer) UpdateMenuItem(item *systray.MenuItem, state *synchronization.State) {
 	if state == nil || item == nil {
 		return
 	}
 	log.Printf("[DEBUG] update menu item")
 
-	msg := fmt.Sprintf("Status: %s\n", state.Status.String())
-
-	if hasConflicts(state) {
-		msg += "⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺⎺\n"
-		msg += "Conflicts on Beta:\n"
-		var n int
-		for _, conflict := range state.GetConflicts() {
-			if n >= 20 {
-				msg += fmt.Sprintf("... and %d more\n", len(state.Conflicts)-n)
-				break
-			}
-			n++
-			if conflict == nil {
+	conflicts := map[string]*systray.MenuItem{}
+	var n int
+	for _, conflict := range state.GetConflicts() {
+		if n >= 60 {
+			item.AddSubMenuItem(fmt.Sprintf("... and %d more", len(state.Conflicts)-n), "")
+			break
+		}
+		n++
+		if conflict == nil {
+			continue
+		}
+		for _, change := range conflict.BetaChanges {
+			if change == nil {
 				continue
 			}
-			for _, change := range conflict.BetaChanges {
-				if change == nil {
-					continue
-				}
-				path := change.Path
-				if len(path) > 40 {
-					path = path[:20] + " ... " + path[len(path)-15:]
-				}
-				msg += fmt.Sprintf("%s\n", path)
+			path := change.Path
+
+			if len(path) > 70 {
+				path = path[:50] + " ... " + path[len(path)-15:]
+			}
+			if c, ok := self.conflicts[path]; ok {
+				conflicts[path] = c
+				delete(self.conflicts, path)
+			} else {
+				conflicts[path] = item.AddSubMenuItem(fmt.Sprintf("%s\n", path), "")
 			}
 		}
 	}
-
-	item.SetTooltip(msg)
-	log.Printf("[INFO] state changed to: %s", msg)
+	for _, conflict := range self.conflicts {
+		conflict.Hide()
+	}
+	self.conflicts = conflicts
 
 	if is(state, disconnected) {
 		item.SetIcon(Icon("disconnected.png"))
@@ -203,10 +207,14 @@ func SetIfNoConflict(state *synchronization.State, item *systray.MenuItem, name 
 	item.SetIcon(Icon(name))
 }
 
-func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*synchronization.State) error {
+func (self *MutagenMon) CheckStates(_ context.Context, states map[string]*synchronization.State) error {
 	var bad int
 	var conflict int
+	sync := "-"
 	for id, current := range states {
+		if is(current, syncing) {
+			sync = "•"
+		}
 		if is(current, disconnected) || is(current, fatal) {
 			bad++
 		}
@@ -216,16 +224,18 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 		peer, ok := self.peers[id]
 		if !ok {
 			item := systray.AddMenuItem(fmt.Sprintf("%s:%s", current.Session.Beta.Host, current.Session.Beta.Path), "")
-			self.UpdateMenuItem(item, current)
-			self.peers[id] = Peer{
-				menu:  item,
-				state: current,
+			peer = Peer{
+				menu:      item,
+				state:     current,
+				conflicts: map[string]*systray.MenuItem{},
 			}
+			peer.UpdateMenuItem(item, current)
+			self.peers[id] = peer
 			continue
 		}
 
 		if peer.state.Status != current.Status || len(peer.state.Conflicts) != len(current.Conflicts) {
-			self.UpdateMenuItem(peer.menu, current)
+			peer.UpdateMenuItem(peer.menu, current)
 			peer.state = current
 			self.peers[id] = peer
 		}
@@ -238,9 +248,10 @@ func (self *MutagenMon) CheckStates(ctx context.Context, states map[string]*sync
 		}
 	}
 	total := len(self.peers)
-	if bad != self.bad || total != self.total || conflict != self.conflict {
-		systray.SetTitle(fmt.Sprintf(`%d-%d-%d`, total-conflict-bad, total-bad, total))
+	if sync != self.sync || bad != self.bad || total != self.total || conflict != self.conflict {
+		systray.SetTitle(fmt.Sprintf(`%d%s%d`, total-conflict-bad, sync, total-bad))
 	}
+	self.sync = sync
 	self.bad = bad
 	self.conflict = conflict
 	self.total = total
@@ -262,7 +273,6 @@ func (self *MutagenMon) Run() {
 
 func (self *MutagenMon) Init() {
 	systray.SetIcon(Icon("icon.png"))
-	systray.SetTooltip("no conflict / connected / total")
 	mQuit := systray.AddMenuItem("Quit Mutagen Monitor", "Author: https://www.andmed.org")
 	go func() {
 		<-mQuit.ClickedCh

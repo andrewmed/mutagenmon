@@ -3,7 +3,7 @@ Mutagen Monitor for Mac
 
 Description
 -----------
-[Mutagen Monitor](https://github.com/andrewmed/mutagenmon) is a system bar only Mac OS application made for monitoring active [Mutagen](https://mutagen.io) sessions
+[Mutagen Monitor](https://github.com/andrewmed/mutagenmon) is a system bar Mac OS application made for monitoring active [Mutagen](https://mutagen.io) sessions
 
 Ratio
 -----
@@ -19,9 +19,12 @@ How to use
 In the bar there is a number of sessions in these states:
 * healthy (connected and with no file conflict)
 * connected (regardless of file conflicts)
-* registered (regardless of file conflicts of connection state)
  
-So on the picture we have one session, connected, but it has file conflicts. On mouse over you can see details for the session
+So on the picture above we have three sessions, connected, but they have file conflicts.
+
+Details for each session will be available in dropdown menu as shown on the picture below.
+
+![Image](demo2.png)
 
 How to build
 ------------
@@ -43,7 +46,7 @@ A: Check if Mutagen [daemon](https://mutagen.io/documentation/introduction/daemo
 
 Releases
 --------
-Signed releases for Mac are available at [releases](https://github.com/andrewmed/mutagenmon/releases)
+Signed and notarised releases for Mac are available at [releases](https://github.com/andrewmed/mutagenmon/releases)
 
 Licence
 -------
